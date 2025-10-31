@@ -624,10 +624,9 @@ const boxesData = [
                     points: 120
                 },
                 {
-                    type: 'video-quiz',
-                    title: 'DC1.2 - Rôle du SST en vidéo',
-                    question: 'Après avoir regardé la vidéo, quelle est la limite d\'intervention du SST ?',
-                    videoUrl: 'https://www.youtube.com/embed/P7l38DC8qCk',
+                    type: 'quiz',
+                    title: 'DC1.2 - Limite d\'intervention du SST',
+                    question: 'Quelle est la limite d\'intervention du SST ?',
                     options: [
                         'Jusqu\'à l\'arrivée des secours spécialisés',
                         'Jusqu\'à la guérison complète',
@@ -635,8 +634,8 @@ const boxesData = [
                         'Il n\'y a pas de limite'
                     ],
                     correctAnswer: 0,
-                    timeLimit: 90,
-                    points: 130
+                    timeLimit: 70,
+                    points: 110
                 }
             ]
         ]
@@ -916,6 +915,16 @@ const gameState = {
 
 // Envoyer une mise à jour via Firebase
 function broadcastUpdate() {
+    // PROTECTION ANTI-NaN : Vérifier et corriger les valeurs avant l'envoi
+    if (isNaN(gameState.totalScore) || gameState.totalScore === undefined || gameState.totalScore === null) {
+        console.error('⚠️ ERREUR CRITIQUE: totalScore est invalide avant broadcastUpdate, correction à 0');
+        gameState.totalScore = 0;
+    }
+    if (isNaN(gameState.boxesUnlocked) || gameState.boxesUnlocked === undefined || gameState.boxesUnlocked === null) {
+        console.error('⚠️ ERREUR CRITIQUE: boxesUnlocked est invalide avant broadcastUpdate, correction à 0');
+        gameState.boxesUnlocked = 0;
+    }
+
     const update = {
         type: 'team_update',
         sessionId: sessionId,
@@ -923,13 +932,24 @@ function broadcastUpdate() {
         boxesUnlocked: gameState.boxesUnlocked,
         totalScore: gameState.totalScore,
         isFinished: gameState.boxesUnlocked >= boxesData.length,
-        finishTime: gameState.stats.endTime,
-        stats: gameState.stats,
+        finishTime: gameState.stats.endTime || null,
+        stats: {
+            gamesWon: gameState.stats.gamesWon || 0,
+            gamesLost: gameState.stats.gamesLost || 0,
+            totalTime: gameState.stats.totalTime || 0,
+            startTime: gameState.stats.startTime || null,
+            endTime: gameState.stats.endTime || null
+        },
         lastUpdate: Date.now()
     };
 
+    // DEBUG: Afficher ce qu'on envoie à Firebase
+    console.log('📤 Envoi à Firebase:', update);
+
     // Enregistrer dans Firebase Realtime Database
-    database.ref('teams/' + sessionId).set(update);
+    database.ref('teams/' + sessionId).set(update).catch(error => {
+        console.error('❌ Erreur Firebase:', error);
+    });
 }
 
 // Écouter les changements d'équipes (pour le superviseur)
@@ -1046,7 +1066,18 @@ window.addEventListener('DOMContentLoaded', () => {
         playSound('tick');
         currentTeamName = teamName;
         appMode = 'player';
+
+        // Réinitialiser complètement le gameState pour une nouvelle partie
+        resetGameState();
         gameState.stats.startTime = Date.now();
+
+        // DEBUG: Afficher l'état après reset
+        console.log('✅ Après resetGameState() dans player-btn:', {
+            totalScore: gameState.totalScore,
+            boxesUnlocked: gameState.boxesUnlocked,
+            sessionId: sessionId,
+            teamName: currentTeamName
+        });
 
         // Écouter les commandes du superviseur
         startListeningToCommands();
@@ -1069,6 +1100,8 @@ window.addEventListener('DOMContentLoaded', () => {
         stopTimer();
         playSound('tick');
         showScreen('boxes-screen');
+        // Recharger l'affichage des coffres avec le score actuel
+        updateBoxesDisplay();
     });
 
     // Bouton recommencer
@@ -1137,6 +1170,27 @@ function resetGameState() {
     gameState.boxesUnlocked = 0;
     gameState.stats = { gamesWon: 0, gamesLost: 0, totalTime: 0, startTime: Date.now(), endTime: null };
     gameState.currentAnswer = null;
+
+    // DEBUG: Vérifier que les valeurs sont correctes
+    console.log('🔄 resetGameState() appelé:', {
+        totalScore: gameState.totalScore,
+        boxesUnlocked: gameState.boxesUnlocked
+    });
+}
+
+// Fonction de protection pour éviter les valeurs NaN
+function safeUpdateDisplay() {
+    // S'assurer que les valeurs ne sont jamais NaN ou undefined
+    if (isNaN(gameState.totalScore) || gameState.totalScore === undefined) {
+        console.error('⚠️ ERREUR: totalScore est NaN ou undefined, réinitialisation à 0');
+        gameState.totalScore = 0;
+    }
+    if (isNaN(gameState.boxesUnlocked) || gameState.boxesUnlocked === undefined) {
+        console.error('⚠️ ERREUR: boxesUnlocked est NaN ou undefined, réinitialisation à 0');
+        gameState.boxesUnlocked = 0;
+    }
+
+    updateBoxesDisplay();
 }
 
 // ==================== SUPERVISEUR ====================
@@ -1292,8 +1346,19 @@ function renderBoxes() {
 }
 
 function updateBoxesDisplay() {
-    document.getElementById('total-score-display').textContent = gameState.totalScore;
-    document.getElementById('boxes-unlocked').textContent = `${gameState.boxesUnlocked}/${boxesData.length}`;
+    // Protections contre NaN
+    const safeScore = isNaN(gameState.totalScore) ? 0 : gameState.totalScore;
+    const safeBoxes = isNaN(gameState.boxesUnlocked) ? 0 : gameState.boxesUnlocked;
+
+    console.log('📊 updateBoxesDisplay():', {
+        totalScore: gameState.totalScore,
+        boxesUnlocked: gameState.boxesUnlocked,
+        safeScore: safeScore,
+        safeBoxes: safeBoxes
+    });
+
+    document.getElementById('total-score-display').textContent = safeScore;
+    document.getElementById('boxes-unlocked').textContent = `${safeBoxes}/${boxesData.length}`;
 }
 
 // ==================== CHARGER UN JEU ====================
@@ -1962,6 +2027,13 @@ function validateAnswer(isCorrect) {
         gameState.stats.gamesWon++;
         gameState.stats.totalTime += (game.timeLimit - gameState.timeLeft);
 
+        // DEBUG: Afficher le score après ajout
+        console.log('✅ Points ajoutés:', {
+            points: points,
+            totalScore: gameState.totalScore,
+            boxesUnlocked: gameState.boxesUnlocked
+        });
+
         createConfetti();
         showFeedback(`✓ Excellent ! +${points} pts`, 'success');
 
@@ -2009,6 +2081,14 @@ function unlockBox() {
     showFeedback(`🔓 ${box.title} déverrouillé !`, 'success');
 
     gameState.boxesUnlocked++;
+
+    // DEBUG: Afficher l'état après déverrouillage
+    console.log('🔓 Coffre déverrouillé:', {
+        boxIndex: boxIndex,
+        boxesUnlocked: gameState.boxesUnlocked,
+        totalScore: gameState.totalScore
+    });
+
     broadcastUpdate();
 
     setTimeout(() => {
