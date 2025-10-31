@@ -1,0 +1,2144 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chasse au Trésor SST - Multijoueur</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap');
+
+        * {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        @keyframes bounce-in {
+            0% { transform: scale(0) rotate(-180deg); opacity: 0; }
+            50% { transform: scale(1.1) rotate(10deg); }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-10px) rotate(-5deg); }
+            75% { transform: translateX(10px) rotate(5deg); }
+        }
+
+        @keyframes unlock {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-20px) rotate(20deg); }
+            100% { transform: translateY(-40px) rotate(40deg); opacity: 0; }
+        }
+
+        @keyframes confetti-fall {
+            0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(5deg); }
+        }
+
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(93, 92, 222, 0.5); }
+            50% { box-shadow: 0 0 40px rgba(93, 92, 222, 0.8), 0 0 60px rgba(93, 92, 222, 0.6); }
+        }
+
+        @keyframes progress-fill {
+            from { height: 0%; }
+            to { height: var(--target-height); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+
+        .bounce-in { animation: bounce-in 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
+        .shake { animation: shake 0.5s ease-in-out; }
+        .unlock { animation: unlock 0.8s ease-out forwards; }
+        .confetti { animation: confetti-fall 3s linear; }
+        .float { animation: float 3s ease-in-out infinite; }
+        .glow { animation: glow 2s ease-in-out infinite; }
+        .pulse-anim { animation: pulse 1s ease-in-out infinite; }
+
+        .glass-morphism {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .dark .glass-morphism {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .neon-text {
+            text-shadow: 0 0 10px rgba(93, 92, 222, 0.8),
+                         0 0 20px rgba(93, 92, 222, 0.6),
+                         0 0 30px rgba(93, 92, 222, 0.4);
+        }
+
+        .progress-bar-vertical {
+            position: relative;
+            width: 100%;
+            height: 500px;
+            background: linear-gradient(180deg, #e0e0e0 0%, #f5f5f5 100%);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.1);
+        }
+
+        .progress-fill {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            transition: height 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+        }
+
+        .box-segment {
+            width: 100%;
+            border-top: 2px solid rgba(255,255,255,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            transition: all 0.5s;
+        }
+
+        .matching-item {
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .matching-item.selected {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(93, 92, 222, 0.8);
+        }
+
+        .matching-item.matched {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .puzzle-piece {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: 2px solid white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            min-height: 60px;
+        }
+
+        .puzzle-piece:hover {
+            transform: rotateY(10deg) scale(1.05);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+
+        .puzzle-piece.correct {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            animation: pulse-success 0.6s;
+        }
+
+        @keyframes pulse-success {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .draw-canvas {
+            border: 3px solid #5D5CDE;
+            border-radius: 12px;
+            background: white;
+            cursor: crosshair;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .sequence-item {
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .sequence-item:hover {
+            transform: translateY(-5px);
+        }
+
+        .sequence-item.selected {
+            transform: scale(0.95);
+            opacity: 0.5;
+        }
+
+        .timer-critical {
+            animation: pulse-red 0.5s infinite;
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { color: #ef4444; transform: scale(1); }
+            50% { color: #dc2626; transform: scale(1.1); }
+        }
+
+        .ranking-badge {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        .rank-1 { background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); }
+        .rank-2 { background: linear-gradient(135deg, #C0C0C0 0%, #808080 100%); }
+        .rank-3 { background: linear-gradient(135deg, #CD7F32 0%, #8B4513 100%); }
+        .rank-other { background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5D5CDE',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="h-full bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 dark:from-gray-900 dark:via-purple-900 dark:to-gray-800">
+    <!-- Confetti Container -->
+    <div id="confetti-container" class="fixed inset-0 pointer-events-none z-50"></div>
+
+    <div id="app" class="min-h-screen p-4 md:p-8">
+
+        <!-- Page de connexion (Superviseur) -->
+        <div id="login-screen" class="max-w-4xl mx-auto">
+            <div class="text-center mb-8 bounce-in">
+                <h1 class="text-5xl md:text-7xl font-bold neon-text text-primary mb-4">🏆 Chasse au Trésor SST</h1>
+                <p class="text-xl md:text-2xl text-gray-700 dark:text-gray-300 font-semibold">Formation Multijoueur</p>
+            </div>
+
+            <div class="max-w-md mx-auto mb-6">
+                <div class="glass-morphism rounded-3xl shadow-2xl p-8 text-center bounce-in" style="animation-delay: 0.2s">
+                    <div class="text-6xl mb-4">👨‍🏫</div>
+                    <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-4">Superviseur</h2>
+                    <p class="text-gray-600 dark:text-gray-400 mb-6">Suivez la progression de tous les groupes en temps réel</p>
+                    <button id="supervisor-btn" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-xl font-bold py-4 rounded-xl shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all">
+                        📊 Tableau de Bord
+                    </button>
+                </div>
+            </div>
+
+            <div class="glass-morphism rounded-3xl shadow-2xl p-8 text-center bounce-in" style="animation-delay: 0.6s">
+                <h3 class="text-xl font-bold text-gray-800 dark:text-white mb-4">📱 Connexion Mobile</h3>
+                <p class="text-gray-600 dark:text-gray-400 mb-4">Scannez ce QR code pour rejoindre depuis votre mobile/tablette</p>
+                <div id="qrcode" class="inline-block p-4 bg-white rounded-xl mb-4"></div>
+                <p class="text-sm text-gray-500 dark:text-gray-500 mb-2">ou</p>
+                <button id="manual-player-access-btn" class="px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-base font-bold rounded-xl shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all">
+                    👥 Accès Joueur Direct
+                </button>
+            </div>
+        </div>
+
+        <!-- Page de connexion (Joueur - accessible via QR code) -->
+        <div id="player-entry-screen" class="hidden max-w-4xl mx-auto">
+            <div class="text-center mb-8 bounce-in">
+                <h1 class="text-5xl md:text-7xl font-bold neon-text text-primary mb-4">🏆 Chasse au Trésor SST</h1>
+                <p class="text-xl md:text-2xl text-gray-700 dark:text-gray-300 font-semibold">Formation Multijoueur</p>
+            </div>
+
+            <div class="max-w-md mx-auto">
+                <div class="glass-morphism rounded-3xl shadow-2xl p-8 text-center bounce-in" style="animation-delay: 0.2s">
+                    <div class="text-6xl mb-4">👥</div>
+                    <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-4">Joueur / Groupe</h2>
+                    <p class="text-gray-600 dark:text-gray-400 mb-4">Rejoignez la chasse au trésor</p>
+
+                    <input type="text" id="team-name-input" placeholder="Nom de votre équipe" class="w-full px-4 py-3 rounded-lg border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-white mb-4 text-base focus:border-primary focus:outline-none" maxlength="20">
+
+                    <button id="player-btn" class="w-full bg-gradient-to-r from-primary via-purple-600 to-pink-600 text-white text-xl font-bold py-4 rounded-xl shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all">
+                        🚀 Commencer
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tableau de bord Superviseur -->
+        <div id="supervisor-screen" class="hidden max-w-full mx-auto">
+            <div class="text-center mb-6">
+                <h1 class="text-4xl md:text-5xl font-bold text-primary neon-text mb-2">👨‍🏫 Tableau de Bord Superviseur</h1>
+                <p class="text-lg text-gray-600 dark:text-gray-400">Progression en temps réel</p>
+                <div class="mt-4 flex flex-wrap justify-center gap-3">
+                    <button id="back-to-login-supervisor" class="px-6 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-semibold transition-all">
+                        ← Retour
+                    </button>
+                    <button id="stop-all-games-btn" class="px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-semibold transition-all">
+                        ⏸️ Arrêter le Jeu
+                    </button>
+                    <button id="reset-all-btn" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-all">
+                        🔄 Réinitialiser Tout
+                    </button>
+                </div>
+            </div>
+
+            <div class="glass-morphism rounded-3xl shadow-2xl p-6 mb-6">
+                <div class="flex justify-between items-center flex-wrap gap-4">
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-primary" id="active-teams-count">0</div>
+                        <div class="text-sm text-gray-600 dark:text-gray-400">Équipes Actives</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-3xl font-bold text-green-600" id="finished-teams-count">0</div>
+                        <div class="text-sm text-gray-600 dark:text-gray-400">Équipes Terminées</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 bg-green-500 rounded-full pulse-anim"></div>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Mise à jour en direct</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barres de progression verticales -->
+            <div id="teams-progress-container" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                <!-- Les barres seront générées ici -->
+            </div>
+
+            <!-- Classement final -->
+            <div id="final-ranking" class="hidden mt-8 glass-morphism rounded-3xl shadow-2xl p-8">
+                <h2 class="text-3xl font-bold text-center text-gray-800 dark:text-white mb-6">🏆 Classement Final</h2>
+                <div id="ranking-list" class="space-y-4">
+                    <!-- Le classement sera généré ici -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Écran des coffres (Joueur) -->
+        <div id="boxes-screen" class="hidden max-w-7xl mx-auto">
+            <div class="text-center mb-6">
+                <div class="inline-block glass-morphism px-6 py-3 rounded-full mb-4">
+                    <span class="text-xl font-bold text-primary" id="team-name-display"></span>
+                </div>
+                <h1 class="text-4xl md:text-5xl font-bold text-primary neon-text mb-4">🎁 Les Coffres au Trésor SST</h1>
+                <div class="flex justify-center items-center gap-6 flex-wrap">
+                    <div class="text-center">
+                        <div class="text-4xl font-bold text-primary" id="total-score-display">0</div>
+                        <div class="text-sm text-gray-600 dark:text-gray-400">Points Totaux</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-4xl font-bold text-green-600" id="boxes-unlocked">0/8</div>
+                        <div class="text-sm text-gray-600 dark:text-gray-400">Coffres Ouverts</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="boxes-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+                <!-- Les coffres seront générés ici -->
+            </div>
+        </div>
+
+        <!-- Écran de jeu -->
+        <div id="game-screen" class="hidden max-w-6xl mx-auto">
+            <!-- En-tête avec score et progression -->
+            <div class="glass-morphism rounded-2xl shadow-xl p-4 md:p-6 mb-6 bounce-in">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+                    <button id="back-to-boxes" class="px-6 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-semibold transition-all">
+                        ← Retour aux coffres
+                    </button>
+
+                    <div class="flex items-center gap-6">
+                        <div class="text-center">
+                            <div class="text-3xl font-bold text-primary" id="game-score-display">0</div>
+                            <div class="text-sm text-gray-600 dark:text-gray-400">Points</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-3xl font-bold text-orange-600" id="timer-display">60</div>
+                            <div class="text-sm text-gray-600 dark:text-gray-400">Secondes</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl" id="attempts-display">❤️❤️❤️</div>
+                            <div class="text-sm text-gray-600 dark:text-gray-400">Essais</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Container du jeu actuel -->
+            <div id="current-game" class="glass-morphism rounded-3xl shadow-2xl p-6 md:p-8 bounce-in">
+                <!-- Le contenu du jeu sera inséré ici dynamiquement -->
+            </div>
+
+            <!-- Boutons de validation -->
+            <div id="game-controls" class="mt-6 flex gap-4">
+                <button id="validate-btn" class="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xl font-bold py-5 rounded-xl shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all duration-300">
+                    ✓ Valider la Réponse
+                </button>
+                <button id="reset-answer-btn" class="hidden px-6 bg-gradient-to-r from-orange-500 to-red-600 text-white text-xl font-bold py-5 rounded-xl shadow-lg hover:shadow-2xl transform hover:scale-105 transition-all duration-300">
+                    🔄 Réinitialiser
+                </button>
+            </div>
+        </div>
+
+        <!-- Écran de fin -->
+        <div id="end-screen" class="hidden max-w-5xl mx-auto text-center">
+            <div class="glass-morphism rounded-3xl shadow-2xl p-8 md:p-12 bounce-in">
+                <div class="text-8xl mb-6">🏆</div>
+                <h1 class="text-5xl md:text-6xl font-bold text-primary neon-text mb-6">Mission Accomplie !</h1>
+                <p class="text-2xl text-gray-700 dark:text-gray-300 mb-8">Vous êtes maintenant un expert SST certifié !</p>
+
+                <div class="bg-gradient-to-r from-primary via-purple-600 to-pink-600 text-white rounded-2xl p-10 mb-8 shadow-2xl">
+                    <div class="text-7xl font-bold mb-3" id="final-score">0</div>
+                    <div class="text-3xl font-semibold">Points totaux</div>
+                </div>
+
+                <div id="final-stats" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <!-- Stats seront ajoutées dynamiquement -->
+                </div>
+
+                <button id="restart-btn" class="bg-gradient-to-r from-primary via-purple-600 to-pink-600 text-white text-3xl font-bold py-8 px-16 rounded-2xl shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all duration-300 glow">
+                    🔄 Recommencer l'Aventure
+                </button>
+            </div>
+        </div>
+    </div>
+
+<script>
+ 
+// Configuration du thème sombre
+if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.classList.add('dark');
+}
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+    if (event.matches) {
+        document.documentElement.classList.add('dark');
+    } else {
+        document.documentElement.classList.remove('dark');
+    }
+});
+
+// ==================== CONFIGURATION FIREBASE ====================
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAZLBDZIaPp3GrXuVz4fPiK91JhLEqXPs0",
+  authDomain: "jeu-sst-v1-291025.firebaseapp.com",
+  databaseURL: "https://jeu-sst-v1-291025-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "jeu-sst-v1-291025",
+  storageBucket: "jeu-sst-v1-291025.firebasestorage.app",
+  messagingSenderId: "57462613537",
+  appId: "1:57462613537:web:6178195b2f4f08fbaa2560"
+};
+
+// Initialiser Firebase
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
+// ==================== SYSTÈME MULTIJOUEUR ====================
+
+// ID unique pour cette session
+const sessionId = 'team_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+
+// État global du mode
+let appMode = 'login'; // 'login', 'supervisor', 'player'
+let currentTeamName = '';
+
+// Stockage des équipes (pour le superviseur)
+let teams = {};
+
+// Audio Context pour les sons
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+// ==================== SONS ====================
+
+function playSound(type, frequency = null) {
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    switch(type) {
+        case 'success':
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(659.25, audioContext.currentTime + 0.1);
+            oscillator.frequency.setValueAtTime(783.99, audioContext.currentTime + 0.2);
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.5);
+            break;
+        case 'error':
+            oscillator.type = 'sawtooth';
+            oscillator.frequency.setValueAtTime(200, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(150, audioContext.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+            break;
+        case 'tick':
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.05);
+            break;
+        case 'unlock':
+            // Son spécial qui varie selon le coffre
+            oscillator.type = 'triangle';
+            const baseFreq = frequency || 400;
+            oscillator.frequency.setValueAtTime(baseFreq, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(baseFreq * 1.5, audioContext.currentTime + 0.15);
+            oscillator.frequency.setValueAtTime(baseFreq * 2, audioContext.currentTime + 0.3);
+            gainNode.gain.setValueAtTime(0.4, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.6);
+            break;
+        case 'complete':
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime);
+            oscillator.frequency.setValueAtTime(659.25, audioContext.currentTime + 0.15);
+            oscillator.frequency.setValueAtTime(783.99, audioContext.currentTime + 0.3);
+            oscillator.frequency.setValueAtTime(1046.50, audioContext.currentTime + 0.45);
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.8);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.8);
+            break;
+    }
+}
+
+// Fréquences pour chaque coffre (pour des sons uniques)
+const boxSoundFrequencies = [300, 350, 400, 450, 500, 550, 600, 650];
+
+// ==================== CONFETTIS ====================
+
+function createConfetti() {
+    const container = document.getElementById('confetti-container');
+    const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffd700', '#ff69b4'];
+    const shapes = ['●', '■', '▲', '★', '♦'];
+
+    for (let i = 0; i < 100; i++) {
+        setTimeout(() => {
+            const confetti = document.createElement('div');
+            confetti.className = 'confetti absolute text-2xl';
+            confetti.textContent = shapes[Math.floor(Math.random() * shapes.length)];
+            confetti.style.left = Math.random() * 100 + '%';
+            confetti.style.color = colors[Math.floor(Math.random() * colors.length)];
+            confetti.style.animationDelay = Math.random() * 0.5 + 's';
+            confetti.style.animationDuration = (Math.random() * 2 + 2) + 's';
+            container.appendChild(confetti);
+
+            setTimeout(() => confetti.remove(), 5000);
+        }, i * 30);
+    }
+}
+
+// ==================== DONNÉES DU JEU ====================
+
+const boxesData = [
+    {
+        title: 'DC1 - Protéger',
+        subtitle: 'Situer son rôle de SST',
+        icon: '🛡️',
+        color: 'from-blue-500 to-blue-700',
+        games: [
+            // Jeu 1 avec 3 variations
+            [
+                {
+                    type: 'quiz',
+                    title: 'DC1.1 - Cadre juridique du SST',
+                    question: 'Quel est le cadre juridique qui définit le rôle du Sauveteur Secouriste du Travail en France ?',
+                    options: [
+                        'Le Code du Travail (Article R4224-15)',
+                        'Le Code Civil',
+                        'Le Code de la Santé Publique',
+                        'Le Règlement Intérieur de l\'entreprise'
+                    ],
+                    correctAnswer: 0,
+                    timeLimit: 60,
+                    points: 100
+                },
+                {
+                    type: 'quiz',
+                    title: 'DC1.1 - Rôle du SST',
+                    question: 'Quel est le rôle principal d\'un SST sur son lieu de travail ?',
+                    options: [
+                        'Remplacer les services d\'urgence',
+                        'Porter les premiers secours et prévenir les risques',
+                        'Soigner toutes les blessures',
+                        'Evacuer les victimes'
+                    ],
+                    correctAnswer: 1,
+                    timeLimit: 60,
+                    points: 100
+                },
+                {
+                    type: 'quiz-multi',
+                    title: 'DC1.1 - Missions du SST',
+                    question: 'Quelles sont les missions d\'un SST ? (Plusieurs réponses)',
+                    options: [
+                        'Protéger',
+                        'Examiner',
+                        'Prescrire des médicaments',
+                        'Faire alerter',
+                        'Secourir',
+                        'Transporter la victime'
+                    ],
+                    correctAnswers: [0, 1, 3, 4],
+                    timeLimit: 70,
+                    points: 120
+                }
+            ],
+            // Jeu 2 avec 2 variations
+            [
+                {
+                    type: 'matching',
+                    title: 'DC1.2 - Délimiter son champ d\'intervention',
+                    question: 'Associez chaque action avec le bon intervenant :',
+                    pairs: [
+                        { left: 'Porter les premiers secours', right: 'SST' },
+                        { left: 'Prescrire un traitement médical', right: 'Médecin' },
+                        { left: 'Protéger et alerter', right: 'SST' },
+                        { left: 'Transporter la victime à l\'hôpital', right: 'Secours spécialisés' }
+                    ],
+                    timeLimit: 90,
+                    points: 120
+                },
+                {
+                    type: 'video-quiz',
+                    title: 'DC1.2 - Rôle du SST en vidéo',
+                    question: 'Après avoir regardé la vidéo, quelle est la limite d\'intervention du SST ?',
+                    videoUrl: 'https://www.youtube.com/embed/P7l38DC8qCk',
+                    options: [
+                        'Jusqu\'à l\'arrivée des secours spécialisés',
+                        'Jusqu\'à la guérison complète',
+                        'Pendant 24 heures',
+                        'Il n\'y a pas de limite'
+                    ],
+                    correctAnswer: 0,
+                    timeLimit: 90,
+                    points: 130
+                }
+            ]
+        ]
+    },
+    {
+        title: 'DC1 - Protéger',
+        subtitle: 'Protéger de façon adaptée',
+        icon: '⚠️',
+        color: 'from-red-500 to-red-700',
+        games: [
+            {
+                type: 'sequence',
+                title: 'Partie 2 - Reconnaître les dangers',
+                question: 'Remettez dans l\'ordre les étapes pour reconnaître les dangers persistants :',
+                items: [
+                    'Observer la situation',
+                    'Identifier les dangers',
+                    'Repérer les personnes exposées',
+                    'Imaginer les accidents possibles'
+                ],
+                correctOrder: [0, 1, 2, 3],
+                timeLimit: 75,
+                points: 130
+            },
+            {
+                type: 'quiz-multi',
+                title: 'Partie 2 - Dangers persistants',
+                question: 'Quels sont les dangers persistants qui nécessitent une protection ? (Plusieurs réponses possibles)',
+                options: [
+                    'Risque électrique',
+                    'Risque d\'incendie ou d\'explosion',
+                    'Risque d\'écrasement',
+                    'Victime qui tousse',
+                    'Atmosphère toxique',
+                    'Risque routier'
+                ],
+                correctAnswers: [0, 1, 2, 4, 5],
+                timeLimit: 80,
+                points: 140
+            }
+        ]
+    },
+    {
+        title: 'DC2 - Examiner',
+        subtitle: 'Examiner la victime',
+        icon: '🔍',
+        color: 'from-green-500 to-green-700',
+        games: [
+            {
+                type: 'sequence',
+                title: 'Partie 2.1 - Ordre d\'examen',
+                question: 'Dans quel ordre examinez-vous une victime ?',
+                items: [
+                    'Vérifier la conscience',
+                    'Vérifier la respiration',
+                    'Rechercher une hémorragie',
+                    'Rechercher d\'autres signes'
+                ],
+                correctOrder: [0, 1, 2, 3],
+                timeLimit: 70,
+                points: 120
+            },
+            {
+                type: 'matching',
+                title: 'Partie 2.1 - Signes et symptômes',
+                question: 'Associez chaque signe avec sa catégorie :',
+                pairs: [
+                    { left: 'Victime ne répond pas', right: 'Inconscience' },
+                    { left: 'Ventre ou thorax qui se soulève', right: 'Respiration présente' },
+                    { left: 'Saignement abondant', right: 'Hémorragie externe' },
+                    { left: 'Brûlure, plaie, douleur', right: 'Autres signes' }
+                ],
+                timeLimit: 85,
+                points: 130
+            }
+        ]
+    },
+    {
+        title: 'DC2 - Alerter',
+        subtitle: 'Faire alerter ou alerter',
+        icon: '📞',
+        color: 'from-yellow-500 to-orange-600',
+        games: [
+            {
+                type: 'puzzle-text',
+                title: 'Partie 6 - Message d\'alerte',
+                question: 'Reconstituez le message d\'alerte dans le bon ordre :',
+                pieces: [
+                    '1. Numéro de téléphone',
+                    '2. Lieu précis de l\'accident',
+                    '3. Nature de l\'accident',
+                    '4. Nombre de victimes',
+                    '5. État de chaque victime',
+                    '6. Gestes effectués'
+                ],
+                correctOrder: [0, 1, 2, 3, 4, 5],
+                timeLimit: 80,
+                points: 130
+            },
+            {
+                type: 'quiz',
+                title: 'Partie 6 - Numéros d\'urgence',
+                question: 'Quel numéro d\'urgence devez-vous appeler pour un accident du travail avec victime grave ?',
+                options: [
+                    '15 - SAMU (urgence médicale)',
+                    '17 - Police',
+                    '112 - Numéro européen',
+                    'Le numéro interne de l\'entreprise uniquement'
+                ],
+                correctAnswer: 0,
+                timeLimit: 50,
+                points: 100
+            }
+        ]
+    },
+    {
+        title: 'DC2 - Secourir',
+        subtitle: 'Hémorragie externe',
+        icon: '🩸',
+        color: 'from-red-600 to-pink-700',
+        games: [
+            {
+                type: 'sequence',
+                title: 'Partie 7.1 - Arrêter une hémorragie',
+                question: 'Remettez dans l\'ordre les étapes pour arrêter une hémorragie externe :',
+                items: [
+                    'Allonger la victime',
+                    'Comprimer directement sur la plaie',
+                    'Faire alerter les secours',
+                    'Surveiller la victime'
+                ],
+                correctOrder: [0, 1, 2, 3],
+                timeLimit: 70,
+                points: 120
+            },
+            {
+                type: 'quiz',
+                title: 'Partie 7.1 - Compression directe',
+                question: 'Avec quoi effectuez-vous la compression directe en priorité ?',
+                options: [
+                    'Avec un garrot',
+                    'Avec vos mains protégées',
+                    'Avec un pansement compressif',
+                    'En surélevant simplement le membre'
+                ],
+                correctAnswer: 1,
+                timeLimit: 55,
+                points: 110
+            }
+        ]
+    },
+    {
+        title: 'DC2 - Secourir',
+        subtitle: 'Obstruction des voies aériennes',
+        icon: '😮',
+        color: 'from-purple-500 to-purple-700',
+        games: [
+            {
+                type: 'matching',
+                title: 'Partie 7.2 - Obstruction partielle vs totale',
+                question: 'Associez les signes avec le type d\'obstruction :',
+                pairs: [
+                    { left: 'La victime peut parler', right: 'Obstruction partielle' },
+                    { left: 'La victime ne peut plus parler ni tousser', right: 'Obstruction totale' },
+                    { left: 'La victime tousse vigoureusement', right: 'Obstruction partielle' },
+                    { left: 'Impossibilité de respirer', right: 'Obstruction totale' }
+                ],
+                timeLimit: 85,
+                points: 130
+            },
+            {
+                type: 'sequence',
+                title: 'Partie 7.2 - Obstruction totale',
+                question: 'Ordre des gestes en cas d\'obstruction totale (adulte) :',
+                items: [
+                    'Donner 5 claques dans le dos',
+                    'Si inefficace : 5 compressions abdominales',
+                    'Alterner claques/compressions',
+                    'Si inconscient : RCP'
+                ],
+                correctOrder: [0, 1, 2, 3],
+                timeLimit: 75,
+                points: 130
+            }
+        ]
+    },
+    {
+        title: 'DC2 - Secourir',
+        subtitle: 'PLS et Arrêt cardiaque',
+        icon: '💓',
+        color: 'from-pink-500 to-red-600',
+        games: [
+            {
+                type: 'quiz',
+                title: 'Partie 7.3 - Position Latérale de Sécurité',
+                question: 'Quand met-on une victime en Position Latérale de Sécurité (PLS) ?',
+                options: [
+                    'Victime consciente avec douleur',
+                    'Victime inconsciente qui respire',
+                    'Victime en arrêt cardiaque',
+                    'Victime avec hémorragie'
+                ],
+                correctAnswer: 1,
+                timeLimit: 50,
+                points: 100
+            },
+            {
+                type: 'quiz-multi',
+                title: 'Partie 7.4 - Arrêt cardiaque',
+                question: 'Quels sont les signes d\'un arrêt cardiaque ? (Plusieurs réponses)',
+                options: [
+                    'Victime inconsciente',
+                    'Victime ne respire pas',
+                    'Victime respire normalement',
+                    'Absence de réaction',
+                    'Victime parle'
+                ],
+                correctAnswers: [0, 1, 3],
+                timeLimit: 70,
+                points: 130
+            }
+        ]
+    },
+    {
+        title: 'DC2 - Secourir',
+        subtitle: 'Situations spécifiques',
+        icon: '🏥',
+        color: 'from-indigo-500 to-blue-700',
+        games: [
+            {
+                type: 'matching',
+                title: 'Partie 8 - Malaises et traumatismes',
+                question: 'Associez chaque situation avec la conduite à tenir :',
+                pairs: [
+                    { left: 'Malaise cardiaque', right: 'Position confortable + alerter' },
+                    { left: 'Brûlure', right: 'Refroidir 5 min minimum' },
+                    { left: 'Traumatisme cervical', right: 'Ne pas mobiliser' },
+                    { left: 'Plaie grave', right: 'Protéger sans retirer corps étranger' }
+                ],
+                timeLimit: 90,
+                points: 140
+            },
+            {
+                type: 'draw',
+                title: 'Partie 8 - Schéma corporel',
+                question: 'Dessinez où se situe le sternum pour un massage cardiaque',
+                timeLimit: 60,
+                points: 100
+            }
+        ]
+    }
+];
+
+// ==================== ÉTAT DU JEU ====================
+
+const gameState = {
+    currentBoxIndex: -1,
+    currentGameIndex: 0,
+    totalScore: 0,
+    gameScore: 0,
+    attempts: 3,
+    maxAttempts: 3,
+    timeLeft: 60,
+    timerInterval: null,
+    boxesUnlocked: 0,
+    stats: {
+        gamesWon: 0,
+        gamesLost: 0,
+        totalTime: 0,
+        startTime: null,
+        endTime: null
+    },
+    currentAnswer: null
+};
+
+// ==================== COMMUNICATION MULTIJOUEUR FIREBASE ====================
+
+// Envoyer une mise à jour via Firebase
+function broadcastUpdate() {
+    const update = {
+        type: 'team_update',
+        sessionId: sessionId,
+        teamName: currentTeamName,
+        boxesUnlocked: gameState.boxesUnlocked,
+        totalScore: gameState.totalScore,
+        isFinished: gameState.boxesUnlocked >= boxesData.length,
+        finishTime: gameState.stats.endTime,
+        stats: gameState.stats,
+        lastUpdate: Date.now()
+    };
+
+    // Enregistrer dans Firebase Realtime Database
+    database.ref('teams/' + sessionId).set(update);
+}
+
+// Écouter les changements d'équipes (pour le superviseur)
+function startListeningToTeams() {
+    database.ref('teams').on('value', (snapshot) => {
+        if (appMode === 'supervisor') {
+            teams = snapshot.val() || {};
+            updateSupervisorDisplay();
+        }
+    });
+}
+
+// Écouter les commandes du superviseur (pour les joueurs)
+function startListeningToCommands() {
+    database.ref('commands').on('value', (snapshot) => {
+        if (appMode !== 'player') return;
+
+        const command = snapshot.val();
+        if (!command) return;
+
+        if (command.type === 'stop_all_games' && command.timestamp > (Date.now() - 5000)) {
+            stopTimer();
+            showCustomAlert('⏸️ Le superviseur a arrêté le jeu !');
+        }
+
+        if (command.type === 'reset_all' && command.timestamp > (Date.now() - 5000)) {
+            resetGameState();
+            showCustomAlert('🔄 Le superviseur a réinitialisé le jeu !');
+            setTimeout(() => {
+                showScreen('player-entry-screen');
+                document.getElementById('team-name-input').value = '';
+            }, 2000);
+        }
+    });
+}
+
+// Envoyer une commande depuis le superviseur
+function sendCommand(commandType) {
+    database.ref('commands').set({
+        type: commandType,
+        timestamp: Date.now()
+    });
+}
+
+// Charger les équipes depuis Firebase
+function loadTeamsFromFirebase() {
+    database.ref('teams').once('value', (snapshot) => {
+        teams = snapshot.val() || {};
+        updateSupervisorDisplay();
+    });
+}
+
+// ==================== INITIALISATION ====================
+
+// Générer le QR Code
+function generateQRCode() {
+    const qrContainer = document.getElementById('qrcode');
+    qrContainer.innerHTML = ''; // Clear existing
+
+    // Créer l'URL avec le paramètre mode=player pour l'accès joueur
+    const url = new URL(window.location.href);
+    url.searchParams.set('mode', 'player');
+
+    new QRCode(qrContainer, {
+        text: url.toString(),
+        width: 200,
+        height: 200,
+        colorDark: '#5D5CDE',
+        colorLight: '#ffffff',
+    });
+}
+
+// Initialisation au chargement
+window.addEventListener('DOMContentLoaded', () => {
+    generateQRCode();
+
+    // Vérifier si l'URL contient le paramètre mode=player
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = urlParams.get('mode');
+
+    if (mode === 'player') {
+        // Afficher directement l'écran d'entrée joueur
+        showScreen('player-entry-screen');
+    } else {
+        // Afficher l'écran de connexion superviseur par défaut
+        showScreen('login-screen');
+    }
+
+    // Bouton Superviseur
+    document.getElementById('supervisor-btn').addEventListener('click', () => {
+        playSound('tick');
+        appMode = 'supervisor';
+        showScreen('supervisor-screen');
+        loadTeamsFromFirebase();
+
+        // Écouter les changements en temps réel
+        startListeningToTeams();
+    });
+
+    // Bouton Accès Joueur Direct (pour test en local)
+    document.getElementById('manual-player-access-btn').addEventListener('click', () => {
+        playSound('tick');
+        showScreen('player-entry-screen');
+    });
+
+    // Bouton Joueur
+    document.getElementById('player-btn').addEventListener('click', () => {
+        const teamName = document.getElementById('team-name-input').value.trim();
+        if (!teamName) {
+            showCustomAlert('⚠️ Veuillez entrer un nom d\'équipe !');
+            return;
+        }
+
+        playSound('tick');
+        currentTeamName = teamName;
+        appMode = 'player';
+        gameState.stats.startTime = Date.now();
+
+        // Écouter les commandes du superviseur
+        startListeningToCommands();
+
+        showScreen('boxes-screen');
+        document.getElementById('team-name-display').textContent = currentTeamName;
+        renderBoxes();
+        broadcastUpdate();
+    });
+
+    // Bouton retour superviseur
+    document.getElementById('back-to-login-supervisor').addEventListener('click', () => {
+        playSound('tick');
+        showScreen('login-screen');
+        appMode = 'login';
+    });
+
+    // Bouton retour aux coffres
+    document.getElementById('back-to-boxes').addEventListener('click', () => {
+        stopTimer();
+        playSound('tick');
+        showScreen('boxes-screen');
+    });
+
+    // Bouton recommencer
+    document.getElementById('restart-btn').addEventListener('click', () => {
+        playSound('tick');
+        resetGameState();
+        showScreen('boxes-screen');
+        renderBoxes();
+        broadcastUpdate();
+    });
+
+    // Bouton Arrêter le jeu (Superviseur)
+    document.getElementById('stop-all-games-btn').addEventListener('click', () => {
+        showConfirmDialog(
+            '⏸️ Voulez-vous vraiment arrêter tous les jeux en cours ?',
+            () => {
+                playSound('tick');
+                // Envoyer une commande Firebase à tous les joueurs
+                sendCommand('stop_all_games');
+                showCustomAlert('⏸️ Signal d\'arrêt envoyé à toutes les équipes !');
+            }
+        );
+    });
+
+    // Bouton Réinitialiser tout (Superviseur)
+    document.getElementById('reset-all-btn').addEventListener('click', () => {
+        showConfirmDialog(
+            '🔄 Voulez-vous vraiment réinitialiser toutes les données ? Cette action est irréversible !',
+            () => {
+                playSound('tick');
+                // Effacer toutes les données Firebase
+                database.ref('teams').remove();
+
+                // Réinitialiser l'objet teams
+                teams = {};
+
+                // Envoyer une commande à tous les joueurs pour réinitialiser
+                sendCommand('reset_all');
+
+                // Mettre à jour l'affichage
+                updateSupervisorDisplay();
+                document.getElementById('final-ranking').classList.add('hidden');
+
+                showCustomAlert('🔄 Toutes les données ont été réinitialisées !');
+            }
+        );
+    });
+});
+
+// Afficher un écran
+function showScreen(screenId) {
+    const screens = ['login-screen', 'player-entry-screen', 'supervisor-screen', 'boxes-screen', 'game-screen', 'end-screen'];
+    screens.forEach(id => {
+        document.getElementById(id).classList.add('hidden');
+    });
+    document.getElementById(screenId).classList.remove('hidden');
+}
+
+// Réinitialiser l'état du jeu
+function resetGameState() {
+    gameState.currentBoxIndex = -1;
+    gameState.currentGameIndex = 0;
+    gameState.totalScore = 0;
+    gameState.gameScore = 0;
+    gameState.attempts = 3;
+    gameState.boxesUnlocked = 0;
+    gameState.stats = { gamesWon: 0, gamesLost: 0, totalTime: 0, startTime: Date.now(), endTime: null };
+    gameState.currentAnswer = null;
+}
+
+// ==================== SUPERVISEUR ====================
+
+function updateSupervisorDisplay() {
+    const container = document.getElementById('teams-progress-container');
+    const teamsArray = Object.values(teams);
+
+    // Compter les équipes actives et terminées
+    const activeTeams = teamsArray.filter(t => !t.isFinished).length;
+    const finishedTeams = teamsArray.filter(t => t.isFinished).length;
+
+    document.getElementById('active-teams-count').textContent = activeTeams;
+    document.getElementById('finished-teams-count').textContent = finishedTeams;
+
+    // Mettre à jour les barres de progression
+    container.innerHTML = '';
+
+    teamsArray.forEach(team => {
+        const teamDiv = document.createElement('div');
+        teamDiv.className = 'bounce-in';
+
+        const progressPercent = (team.boxesUnlocked / boxesData.length) * 100;
+
+        // Générer les segments de coffres
+        let segmentsHTML = '';
+        for (let i = 0; i < team.boxesUnlocked; i++) {
+            const box = boxesData[i];
+            const segmentHeight = 100 / boxesData.length;
+            segmentsHTML += `
+                <div class="box-segment bg-gradient-to-r ${box.color}" style="height: ${segmentHeight}%">
+                    ${box.icon}
+                </div>
+            `;
+        }
+
+        teamDiv.innerHTML = `
+            <div class="glass-morphism rounded-2xl p-4 shadow-xl">
+                <div class="text-center mb-3">
+                    <div class="text-lg font-bold text-gray-800 dark:text-white">${team.teamName}</div>
+                    <div class="text-sm text-gray-600 dark:text-gray-400">${team.totalScore} pts</div>
+                    ${team.isFinished ? '<div class="text-xs text-green-600 font-semibold">✓ Terminé</div>' : ''}
+                </div>
+
+                <div class="progress-bar-vertical">
+                    <div class="progress-fill" style="height: ${progressPercent}%">
+                        ${segmentsHTML}
+                    </div>
+                </div>
+
+                <div class="text-center mt-3 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    ${team.boxesUnlocked} / ${boxesData.length}
+                </div>
+            </div>
+        `;
+
+        container.appendChild(teamDiv);
+    });
+
+    // Afficher le classement final si toutes les équipes ont terminé
+    if (finishedTeams > 0 && finishedTeams === teamsArray.length && teamsArray.length > 0) {
+        showFinalRanking();
+    }
+}
+
+function showFinalRanking() {
+    const rankingDiv = document.getElementById('final-ranking');
+    const rankingList = document.getElementById('ranking-list');
+
+    rankingDiv.classList.remove('hidden');
+
+    // Trier les équipes par score décroissant, puis par temps
+    const sortedTeams = Object.values(teams).sort((a, b) => {
+        if (b.totalScore !== a.totalScore) {
+            return b.totalScore - a.totalScore;
+        }
+        return (a.finishTime || Infinity) - (b.finishTime || Infinity);
+    });
+
+    rankingList.innerHTML = '';
+
+    sortedTeams.forEach((team, index) => {
+        const rank = index + 1;
+        const rankClass = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'rank-other';
+        const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+
+        const duration = team.finishTime && team.stats.startTime ?
+            Math.round((team.finishTime - team.stats.startTime) / 1000) : 0;
+
+        const rankItem = document.createElement('div');
+        rankItem.className = 'glass-morphism rounded-2xl p-6 flex items-center gap-6 bounce-in';
+        rankItem.style.animationDelay = `${index * 0.1}s`;
+
+        rankItem.innerHTML = `
+            <div class="ranking-badge ${rankClass}">
+                ${medal}
+            </div>
+            <div class="flex-1">
+                <div class="text-2xl font-bold text-gray-800 dark:text-white">${team.teamName}</div>
+                <div class="text-sm text-gray-600 dark:text-gray-400">
+                    ${team.totalScore} points • ${duration}s • ${team.stats.gamesWon}/${team.stats.gamesWon + team.stats.gamesLost} réussis
+                </div>
+            </div>
+            <div class="text-3xl">${rank === 1 ? '🎉' : rank === 2 ? '👏' : rank === 3 ? '👍' : '✨'}</div>
+        `;
+
+        rankingList.appendChild(rankItem);
+    });
+}
+
+// ==================== JOUEUR - COFFRES ====================
+
+function renderBoxes() {
+    const container = document.getElementById('boxes-container');
+    container.innerHTML = '';
+
+    boxesData.forEach((box, index) => {
+        const isUnlocked = gameState.boxesUnlocked > index;
+        const isCurrent = gameState.boxesUnlocked === index;
+
+        const boxElement = document.createElement('div');
+        boxElement.className = `${isUnlocked ? 'unlocked-box' : 'locked-box'} cursor-pointer transition-all duration-500 bounce-in`;
+        boxElement.style.animationDelay = `${index * 0.1}s`;
+
+        boxElement.innerHTML = `
+            <div class="relative p-6 rounded-2xl bg-gradient-to-br ${box.color} shadow-2xl transform hover:scale-105 transition-all duration-300">
+                <div class="text-center mb-4">
+                    <div class="text-6xl mb-3 ${isUnlocked ? '' : 'grayscale'}">${box.icon}</div>
+                    <div class="text-4xl mb-2">${isUnlocked ? '🔓' : '🔒'}</div>
+                </div>
+                <h3 class="text-xl font-bold text-white text-center mb-2">${box.title}</h3>
+                <p class="text-sm text-white text-opacity-90 text-center mb-4">${box.subtitle}</p>
+                ${isUnlocked ? '<div class="text-center text-white font-bold">✓ DÉVERROUILLÉ</div>' :
+                 isCurrent ? '<div class="text-center text-white font-bold animate-pulse">CLIQUE ICI !</div>' :
+                 '<div class="text-center text-white text-opacity-70">Verrouillé</div>'}
+            </div>
+        `;
+
+        if (isCurrent || isUnlocked) {
+            boxElement.addEventListener('click', () => {
+                playSound('tick');
+                gameState.currentBoxIndex = index;
+                gameState.currentGameIndex = 0;
+                gameState.gameScore = 0;
+                loadBoxGame();
+            });
+        }
+
+        container.appendChild(boxElement);
+    });
+
+    updateBoxesDisplay();
+}
+
+function updateBoxesDisplay() {
+    document.getElementById('total-score-display').textContent = gameState.totalScore;
+    document.getElementById('boxes-unlocked').textContent = `${gameState.boxesUnlocked}/${boxesData.length}`;
+}
+
+// ==================== CHARGER UN JEU ====================
+
+function loadBoxGame() {
+    const box = boxesData[gameState.currentBoxIndex];
+
+    // Sélectionner aléatoirement un jeu parmi les variations disponibles
+    const gameVariations = box.games[gameState.currentGameIndex];
+    if (!gameVariations) {
+        unlockBox();
+        return;
+    }
+
+    // Si c'est un tableau de variations, en choisir une au hasard
+    const game = Array.isArray(gameVariations) ?
+        gameVariations[Math.floor(Math.random() * gameVariations.length)] :
+        gameVariations;
+
+    gameState.attempts = gameState.maxAttempts;
+    gameState.timeLeft = game.timeLimit;
+    gameState.currentAnswer = null;
+
+    showScreen('game-screen');
+    updateGameDisplay();
+
+    const container = document.getElementById('current-game');
+    container.className = 'glass-morphism rounded-3xl shadow-2xl p-6 md:p-8 bounce-in';
+
+    document.getElementById('reset-answer-btn').classList.add('hidden');
+
+    switch(game.type) {
+        case 'quiz':
+            renderQuiz(game, container);
+            break;
+        case 'quiz-multi':
+            renderQuizMulti(game, container);
+            break;
+        case 'matching':
+            renderMatching(game, container);
+            break;
+        case 'sequence':
+            renderSequence(game, container);
+            break;
+        case 'puzzle-text':
+            renderPuzzleText(game, container);
+            break;
+        case 'draw':
+            renderDraw(game, container);
+            break;
+        case 'video-quiz':
+            renderVideoQuiz(game, container);
+            break;
+        case 'image-quiz':
+            renderImageQuiz(game, container);
+            break;
+    }
+
+    startTimer();
+}
+
+// ==================== RENDU DES JEUX ====================
+
+// QUIZ SIMPLE
+function renderQuiz(game, container) {
+    container.innerHTML = `
+        <div class="mb-6">
+            <div class="inline-block px-4 py-2 bg-gradient-to-r ${boxesData[gameState.currentBoxIndex].color} text-white rounded-full text-sm font-bold mb-3">${game.title}</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-6">${game.question}</h2>
+        </div>
+        <div id="quiz-options" class="space-y-4">
+            ${game.options.map((option, index) => `
+                <button class="quiz-option w-full text-left p-5 md:p-6 rounded-2xl border-3 border-gray-300 dark:border-gray-600 hover:border-primary hover:bg-gradient-to-r hover:from-primary hover:to-purple-600 hover:text-white transition-all duration-300 text-base md:text-lg font-semibold text-gray-700 dark:text-gray-300 shadow-lg" data-index="${index}">
+                    <span class="inline-block w-8 h-8 rounded-full bg-primary text-white text-center leading-8 mr-3 font-bold">${String.fromCharCode(65 + index)}</span>
+                    ${option}
+                </button>
+            `).join('')}
+        </div>
+    `;
+
+    document.querySelectorAll('.quiz-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            playSound('tick');
+            gameState.currentAnswer = parseInt(btn.dataset.index);
+
+            document.querySelectorAll('.quiz-option').forEach(b => {
+                b.classList.remove('border-primary', 'bg-gradient-to-r', 'from-primary', 'to-purple-600', 'text-white', 'scale-105', 'shadow-2xl');
+                b.classList.add('border-gray-300', 'dark:border-gray-600');
+            });
+
+            btn.classList.remove('border-gray-300', 'dark:border-gray-600');
+            btn.classList.add('border-primary', 'bg-gradient-to-r', 'from-primary', 'to-purple-600', 'text-white', 'scale-105', 'shadow-2xl');
+
+            document.getElementById('reset-answer-btn').classList.remove('hidden');
+        });
+    });
+
+    setupValidation(() => {
+        if (gameState.currentAnswer === null) {
+            showCustomAlert('⚠️ Veuillez sélectionner une réponse !');
+            return false;
+        }
+        return gameState.currentAnswer === game.correctAnswer;
+    });
+}
+
+// QUIZ MULTI (reste du code dans le prochain message pour ne pas dépasser la limite)
+function renderQuizMulti(game, container) {
+    const selectedAnswers = new Set();
+
+    container.innerHTML = `
+        <div class="mb-6">
+            <div class="inline-block px-4 py-2 bg-gradient-to-r ${boxesData[gameState.currentBoxIndex].color} text-white rounded-full text-sm font-bold mb-3">${game.title}</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-4">${game.question}</h2>
+            <p class="text-sm text-orange-600 dark:text-orange-400 font-semibold">⚠️ Plusieurs réponses correctes</p>
+        </div>
+        <div id="quiz-multi-options" class="space-y-4">
+            ${game.options.map((option, index) => `
+                <button class="quiz-multi-option w-full text-left p-5 md:p-6 rounded-2xl border-3 border-gray-300 dark:border-gray-600 hover:border-primary transition-all duration-300 text-base md:text-lg font-semibold text-gray-700 dark:text-gray-300 shadow-lg" data-index="${index}">
+                    <span class="inline-block w-8 h-8 rounded-lg border-2 border-gray-400 text-center leading-7 mr-3 option-checkbox"></span>
+                    ${option}
+                </button>
+            `).join('')}
+        </div>
+    `;
+
+    document.querySelectorAll('.quiz-multi-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            playSound('tick');
+            const index = parseInt(btn.dataset.index);
+
+            if (selectedAnswers.has(index)) {
+                selectedAnswers.delete(index);
+                btn.classList.remove('border-primary', 'bg-gradient-to-r', 'from-primary', 'to-purple-600', 'text-white');
+                btn.querySelector('.option-checkbox').textContent = '';
+            } else {
+                selectedAnswers.add(index);
+                btn.classList.add('border-primary', 'bg-gradient-to-r', 'from-primary', 'to-purple-600', 'text-white');
+                btn.querySelector('.option-checkbox').textContent = '✓';
+            }
+
+            gameState.currentAnswer = Array.from(selectedAnswers).sort((a, b) => a - b);
+            document.getElementById('reset-answer-btn').classList.remove('hidden');
+        });
+    });
+
+    setupValidation(() => {
+        if (!gameState.currentAnswer || gameState.currentAnswer.length === 0) {
+            showCustomAlert('⚠️ Veuillez sélectionner au moins une réponse !');
+            return false;
+        }
+        return JSON.stringify(gameState.currentAnswer) === JSON.stringify(game.correctAnswers.sort((a, b) => a - b));
+    });
+}
+
+// APPARIEMENT (suite dans le prochain fichier si nécessaire - je vais condenser)
+function renderMatching(game, container) {
+    const shuffledRight = [...game.pairs.map((p, i) => ({ value: p.right, index: i }))].sort(() => Math.random() - 0.5);
+    const matches = {};
+    let selectedLeft = null;
+    let selectedRight = null;
+
+    container.innerHTML = `
+        <div class="mb-6">
+            <div class="inline-block px-4 py-2 bg-gradient-to-r ${boxesData[gameState.currentBoxIndex].color} text-white rounded-full text-sm font-bold mb-3">${game.title}</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-4">${game.question}</h2>
+            <p class="text-sm text-blue-600 dark:text-blue-400 font-semibold">💡 Cliquez gauche puis droite</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mb-6">
+            <div id="left-column" class="space-y-3">
+                ${game.pairs.map((pair, index) => `
+                    <button class="matching-left-item matching-item w-full p-5 bg-gradient-to-r from-blue-400 to-blue-600 rounded-xl font-semibold text-white border-3 border-blue-300 shadow-lg hover:shadow-2xl transition-all" data-index="${index}">
+                        ${pair.left}
+                    </button>
+                `).join('')}
+            </div>
+            <div id="right-column" class="space-y-3">
+                ${shuffledRight.map((item) => `
+                    <button class="matching-right-item matching-item w-full p-5 bg-gradient-to-r from-green-400 to-green-600 rounded-xl font-semibold text-white border-3 border-green-300 shadow-lg hover:shadow-2xl transition-all" data-index="${item.index}">
+                        ${item.value}
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+        <div class="bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900 rounded-xl p-6">
+            <div class="font-bold text-gray-800 dark:text-white mb-3">📝 Associations :</div>
+            <div id="matches-list" class="text-gray-700 dark:text-gray-300">Aucune</div>
+        </div>
+    `;
+
+    function updateMatchesDisplay() {
+        const matchesList = document.getElementById('matches-list');
+        if (Object.keys(matches).length === 0) {
+            matchesList.innerHTML = 'Aucune';
+        } else {
+            matchesList.innerHTML = Object.entries(matches).map(([leftIndex, rightIndex]) => {
+                const leftValue = game.pairs[leftIndex].left;
+                const rightValue = game.pairs[rightIndex].right;
+                return `<div class="flex items-center gap-3 mb-2 p-3 bg-white dark:bg-gray-800 rounded-lg">
+                    <span class="flex-1 font-semibold text-blue-600">${leftValue}</span>
+                    <span class="text-2xl">→</span>
+                    <span class="flex-1 font-semibold text-green-600">${rightValue}</span>
+                    <button class="text-red-500 hover:text-red-700 font-bold" onclick="removeMatch(${leftIndex})">✕</button>
+                </div>`;
+            }).join('');
+        }
+    }
+
+    window.removeMatch = (leftIndex) => {
+        delete matches[leftIndex];
+        document.querySelectorAll('.matching-left-item, .matching-right-item').forEach(btn => {
+            btn.classList.remove('matched', 'opacity-50');
+        });
+        updateMatchesDisplay();
+        gameState.currentAnswer = matches;
+        playSound('tick');
+    };
+
+    document.querySelectorAll('.matching-left-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            playSound('tick');
+            const index = parseInt(btn.dataset.index);
+            if (matches[index]) return;
+
+            document.querySelectorAll('.matching-left-item').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedLeft = index;
+
+            if (selectedRight !== null) {
+                matches[selectedLeft] = selectedRight;
+                btn.classList.add('matched', 'opacity-50');
+                document.querySelectorAll('.matching-right-item').forEach(b => {
+                    if (parseInt(b.dataset.index) === selectedRight) b.classList.add('matched', 'opacity-50');
+                    b.classList.remove('selected');
+                });
+                updateMatchesDisplay();
+                gameState.currentAnswer = matches;
+                selectedLeft = null;
+                selectedRight = null;
+                document.getElementById('reset-answer-btn').classList.remove('hidden');
+            }
+        });
+    });
+
+    document.querySelectorAll('.matching-right-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            playSound('tick');
+            const index = parseInt(btn.dataset.index);
+            if (Object.values(matches).includes(index)) return;
+
+            document.querySelectorAll('.matching-right-item').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedRight = index;
+
+            if (selectedLeft !== null) {
+                matches[selectedLeft] = selectedRight;
+                btn.classList.add('matched', 'opacity-50');
+                document.querySelectorAll('.matching-left-item').forEach(b => {
+                    if (parseInt(b.dataset.index) === selectedLeft) b.classList.add('matched', 'opacity-50');
+                    b.classList.remove('selected');
+                });
+                updateMatchesDisplay();
+                gameState.currentAnswer = matches;
+                selectedLeft = null;
+                selectedRight = null;
+                document.getElementById('reset-answer-btn').classList.remove('hidden');
+            }
+        });
+    });
+
+    setupValidation(() => {
+        if (Object.keys(matches).length < game.pairs.length) {
+            showCustomAlert('⚠️ Complétez toutes les associations !');
+            return false;
+        }
+        return game.pairs.every((pair, index) => matches[index] === index);
+    });
+}
+
+// SÉQUENCE
+function renderSequence(game, container) {
+    const currentOrder = [...game.items.map((item, i) => i)].sort(() => Math.random() - 0.5);
+    let selectedItems = [];
+
+    container.innerHTML = `
+        <div class="mb-6">
+            <div class="inline-block px-4 py-2 bg-gradient-to-r ${boxesData[gameState.currentBoxIndex].color} text-white rounded-full text-sm font-bold mb-3">${game.title}</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-4">${game.question}</h2>
+            <p class="text-sm text-blue-600 dark:text-blue-400 font-semibold">💡 Cliquez dans le bon ordre</p>
+        </div>
+        <div id="sequence-items" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            ${currentOrder.map(index => `
+                <button class="sequence-item p-6 bg-gradient-to-r from-indigo-400 to-purple-600 rounded-xl font-semibold text-white shadow-lg hover:shadow-2xl border-3 border-transparent" data-index="${index}">
+                    ${game.items[index]}
+                </button>
+            `).join('')}
+        </div>
+        <div class="bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900 dark:to-purple-900 rounded-xl p-6">
+            <div class="font-bold text-gray-800 dark:text-white mb-3">📝 Votre ordre :</div>
+            <div id="sequence-order" class="text-gray-700 dark:text-gray-300">Cliquez...</div>
+        </div>
+    `;
+
+    function updateSequenceDisplay() {
+        const orderDiv = document.getElementById('sequence-order');
+        if (selectedItems.length === 0) {
+            orderDiv.innerHTML = 'Cliquez...';
+        } else {
+            orderDiv.innerHTML = selectedItems.map((index, position) =>
+                `<div class="inline-block mr-3 mb-2 p-3 bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <span class="font-bold text-primary mr-2">${position + 1}.</span>
+                    <span class="font-semibold">${game.items[index]}</span>
+                </div>`
+            ).join('');
+        }
+    }
+
+    document.querySelectorAll('.sequence-item').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const index = parseInt(btn.dataset.index);
+
+            if (selectedItems.includes(index)) {
+                const pos = selectedItems.indexOf(index);
+                selectedItems.splice(pos, 1);
+                btn.classList.remove('selected', 'opacity-50', 'border-yellow-400');
+                btn.classList.add('border-transparent');
+            } else {
+                selectedItems.push(index);
+                btn.classList.add('selected', 'opacity-50', 'border-yellow-400');
+            }
+
+            playSound('tick');
+            updateSequenceDisplay();
+            gameState.currentAnswer = selectedItems;
+
+            if (selectedItems.length > 0) {
+                document.getElementById('reset-answer-btn').classList.remove('hidden');
+            }
+        });
+    });
+
+    setupValidation(() => {
+        if (selectedItems.length !== game.items.length) {
+            showCustomAlert('⚠️ Ordonnez tous les éléments !');
+            return false;
+        }
+        return JSON.stringify(selectedItems) === JSON.stringify(game.correctOrder);
+    });
+}
+
+// PUZZLE
+function renderPuzzleText(game, container) {
+    const shuffledPieces = [...game.pieces.map((p, i) => ({ text: p, index: i }))].sort(() => Math.random() - 0.5);
+    let placedPieces = Array(game.pieces.length).fill(null);
+
+    container.innerHTML = `
+        <div class="mb-6">
+            <div class="inline-block px-4 py-2 bg-gradient-to-r ${boxesData[gameState.currentBoxIndex].color} text-white rounded-full text-sm font-bold mb-3">${game.title}</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-4">${game.question}</h2>
+        </div>
+        <div class="mb-6">
+            <div class="font-semibold text-gray-700 dark:text-gray-300 mb-3">Zone :</div>
+            <div id="puzzle-target" class="space-y-3">
+                ${game.pieces.map((_, index) => `
+                    <div class="puzzle-slot min-h-16 p-4 border-3 border-dashed border-gray-400 rounded-xl flex items-center justify-center text-gray-400 font-semibold bg-gray-50 dark:bg-gray-800" data-slot="${index}">
+                        Position ${index + 1}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        <div>
+            <div class="font-semibold text-gray-700 dark:text-gray-300 mb-3">Pièces :</div>
+            <div id="puzzle-pieces" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                ${shuffledPieces.map((piece) => `
+                    <div class="puzzle-piece cursor-pointer" data-piece-index="${piece.index}">
+                        ${piece.text}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    let selectedPiece = null;
+
+    document.querySelectorAll('.puzzle-piece').forEach(piece => {
+        piece.addEventListener('click', () => {
+            if (piece.classList.contains('correct')) return;
+            playSound('tick');
+            document.querySelectorAll('.puzzle-piece').forEach(p => p.classList.remove('ring-4', 'ring-yellow-400'));
+            piece.classList.add('ring-4', 'ring-yellow-400');
+            selectedPiece = parseInt(piece.dataset.pieceIndex);
+        });
+    });
+
+    document.querySelectorAll('.puzzle-slot').forEach(slot => {
+        slot.addEventListener('click', () => {
+            if (selectedPiece === null) {
+                showCustomAlert('⚠️ Sélectionnez une pièce !');
+                return;
+            }
+
+            const slotIndex = parseInt(slot.dataset.slot);
+
+            if (placedPieces[slotIndex] !== null) {
+                document.querySelectorAll('.puzzle-piece').forEach(p => {
+                    if (parseInt(p.dataset.pieceIndex) === placedPieces[slotIndex]) {
+                        p.classList.remove('correct', 'opacity-30');
+                    }
+                });
+            }
+
+            placedPieces[slotIndex] = selectedPiece;
+            slot.innerHTML = `<div class="text-white font-semibold">${game.pieces[selectedPiece]}</div>`;
+            slot.classList.remove('border-gray-400', 'bg-gray-50');
+            slot.classList.add('bg-gradient-to-r', 'from-green-400', 'to-green-600', 'border-green-300');
+
+            document.querySelectorAll('.puzzle-piece').forEach(p => {
+                if (parseInt(p.dataset.pieceIndex) === selectedPiece) {
+                    p.classList.add('correct', 'opacity-30');
+                    p.classList.remove('ring-4', 'ring-yellow-400');
+                }
+            });
+
+            playSound('success');
+            selectedPiece = null;
+            gameState.currentAnswer = placedPieces;
+            document.getElementById('reset-answer-btn').classList.remove('hidden');
+        });
+    });
+
+    setupValidation(() => {
+        if (placedPieces.includes(null)) {
+            showCustomAlert('⚠️ Placez toutes les pièces !');
+            return false;
+        }
+        return placedPieces.every((piece, index) => piece === game.correctOrder[index]);
+    });
+}
+
+// DESSIN
+function renderDraw(game, container) {
+    container.innerHTML = `
+        <div class="mb-6">
+            <div class="inline-block px-4 py-2 bg-gradient-to-r ${boxesData[gameState.currentBoxIndex].color} text-white rounded-full text-sm font-bold mb-3">${game.title}</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-4">${game.question}</h2>
+        </div>
+        <div class="mb-4 flex gap-3 flex-wrap">
+            <button id="color-black" class="w-12 h-12 bg-black rounded-full border-4 border-gray-300 hover:scale-110 transition-all"></button>
+            <button id="color-red" class="w-12 h-12 bg-red-500 rounded-full border-4 border-gray-300 hover:scale-110 transition-all"></button>
+            <button id="color-blue" class="w-12 h-12 bg-blue-500 rounded-full border-4 border-gray-300 hover:scale-110 transition-all"></button>
+            <button id="clear-canvas" class="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700">🗑️ Effacer</button>
+        </div>
+        <canvas id="draw-canvas" class="draw-canvas w-full" width="800" height="500"></canvas>
+    `;
+
+    const canvas = document.getElementById('draw-canvas');
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false;
+    let currentColor = '#000000';
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    function startDrawing(e) {
+        isDrawing = true;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+    }
+
+    function draw(e) {
+        if (!isDrawing) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        ctx.lineTo(x, y);
+        ctx.strokeStyle = currentColor;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        gameState.currentAnswer = true;
+        document.getElementById('reset-answer-btn').classList.remove('hidden');
+    }
+
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', () => isDrawing = false);
+    canvas.addEventListener('mouseout', () => isDrawing = false);
+
+    // Touch support
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        isDrawing = true;
+    });
+
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        if (!isDrawing) return;
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+        ctx.lineTo(x, y);
+        ctx.strokeStyle = currentColor;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+    });
+
+    canvas.addEventListener('touchend', () => isDrawing = false);
+
+    document.getElementById('color-black').addEventListener('click', () => { currentColor = '#000000'; playSound('tick'); });
+    document.getElementById('color-red').addEventListener('click', () => { currentColor = '#FF0000'; playSound('tick'); });
+    document.getElementById('color-blue').addEventListener('click', () => { currentColor = '#0000FF'; playSound('tick'); });
+    document.getElementById('clear-canvas').addEventListener('click', () => {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        gameState.currentAnswer = null;
+        playSound('tick');
+    });
+
+    setupValidation(() => {
+        if (!gameState.currentAnswer) {
+            showCustomAlert('⚠️ Dessinez quelque chose !');
+            return false;
+        }
+        return true;
+    });
+}
+
+// VIDEO QUIZ (avec vidéo YouTube intégrée)
+function renderVideoQuiz(game, container) {
+    container.innerHTML = `
+        <div class="mb-6">
+            <div class="inline-block px-4 py-2 bg-gradient-to-r ${boxesData[gameState.currentBoxIndex].color} text-white rounded-full text-sm font-bold mb-3">${game.title}</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-6">${game.question}</h2>
+        </div>
+        ${game.videoUrl ? `
+            <div class="mb-6">
+                <div class="relative aspect-video rounded-xl overflow-hidden shadow-2xl">
+                    <iframe class="w-full h-full" src="${game.videoUrl}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                </div>
+            </div>
+        ` : ''}
+        <div id="quiz-options" class="space-y-4">
+            ${game.options.map((option, index) => `
+                <button class="quiz-option w-full text-left p-5 md:p-6 rounded-2xl border-3 border-gray-300 dark:border-gray-600 hover:border-primary hover:bg-gradient-to-r hover:from-primary hover:to-purple-600 hover:text-white transition-all duration-300 text-base md:text-lg font-semibold text-gray-700 dark:text-gray-300 shadow-lg" data-index="${index}">
+                    <span class="inline-block w-8 h-8 rounded-full bg-primary text-white text-center leading-8 mr-3 font-bold">${String.fromCharCode(65 + index)}</span>
+                    ${option}
+                </button>
+            `).join('')}
+        </div>
+    `;
+
+    document.querySelectorAll('.quiz-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            playSound('tick');
+            gameState.currentAnswer = parseInt(btn.dataset.index);
+
+            document.querySelectorAll('.quiz-option').forEach(b => {
+                b.classList.remove('border-primary', 'bg-gradient-to-r', 'from-primary', 'to-purple-600', 'text-white', 'scale-105', 'shadow-2xl');
+                b.classList.add('border-gray-300', 'dark:border-gray-600');
+            });
+
+            btn.classList.remove('border-gray-300', 'dark:border-gray-600');
+            btn.classList.add('border-primary', 'bg-gradient-to-r', 'from-primary', 'to-purple-600', 'text-white', 'scale-105', 'shadow-2xl');
+
+            document.getElementById('reset-answer-btn').classList.remove('hidden');
+        });
+    });
+
+    setupValidation(() => {
+        if (gameState.currentAnswer === null) {
+            showCustomAlert('⚠️ Veuillez sélectionner une réponse !');
+            return false;
+        }
+        return gameState.currentAnswer === game.correctAnswer;
+    });
+}
+
+// IMAGE QUIZ (avec image)
+function renderImageQuiz(game, container) {
+    container.innerHTML = `
+        <div class="mb-6">
+            <div class="inline-block px-4 py-2 bg-gradient-to-r ${boxesData[gameState.currentBoxIndex].color} text-white rounded-full text-sm font-bold mb-3">${game.title}</div>
+            <h2 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-6">${game.question}</h2>
+        </div>
+        ${game.imageData ? `
+            <div class="mb-6 flex justify-center">
+                <div class="max-w-2xl rounded-xl overflow-hidden shadow-2xl border-4 border-primary">
+                    <img src="${game.imageData}" alt="Question image" class="w-full h-auto">
+                </div>
+            </div>
+        ` : ''}
+        <div id="quiz-options" class="space-y-4">
+            ${game.options.map((option, index) => `
+                <button class="quiz-option w-full text-left p-5 md:p-6 rounded-2xl border-3 border-gray-300 dark:border-gray-600 hover:border-primary hover:bg-gradient-to-r hover:from-primary hover:to-purple-600 hover:text-white transition-all duration-300 text-base md:text-lg font-semibold text-gray-700 dark:text-gray-300 shadow-lg" data-index="${index}">
+                    <span class="inline-block w-8 h-8 rounded-full bg-primary text-white text-center leading-8 mr-3 font-bold">${String.fromCharCode(65 + index)}</span>
+                    ${option}
+                </button>
+            `).join('')}
+        </div>
+    `;
+
+    document.querySelectorAll('.quiz-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+            playSound('tick');
+            gameState.currentAnswer = parseInt(btn.dataset.index);
+
+            document.querySelectorAll('.quiz-option').forEach(b => {
+                b.classList.remove('border-primary', 'bg-gradient-to-r', 'from-primary', 'to-purple-600', 'text-white', 'scale-105', 'shadow-2xl');
+                b.classList.add('border-gray-300', 'dark:border-gray-600');
+            });
+
+            btn.classList.remove('border-gray-300', 'dark:border-gray-600');
+            btn.classList.add('border-primary', 'bg-gradient-to-r', 'from-primary', 'to-purple-600', 'text-white', 'scale-105', 'shadow-2xl');
+
+            document.getElementById('reset-answer-btn').classList.remove('hidden');
+        });
+    });
+
+    setupValidation(() => {
+        if (gameState.currentAnswer === null) {
+            showCustomAlert('⚠️ Veuillez sélectionner une réponse !');
+            return false;
+        }
+        return gameState.currentAnswer === game.correctAnswer;
+    });
+}
+
+// ==================== VALIDATION ====================
+
+function setupValidation(validateFunction) {
+    document.getElementById('validate-btn').onclick = () => {
+        const isCorrect = validateFunction();
+        if (isCorrect !== false) {
+            validateAnswer(isCorrect);
+        }
+    };
+
+    document.getElementById('reset-answer-btn').onclick = () => {
+        playSound('tick');
+        gameState.currentAnswer = null;
+        loadBoxGame();
+    };
+}
+
+function validateAnswer(isCorrect) {
+    stopTimer();
+
+    if (isCorrect) {
+        playSound('success');
+        const game = boxesData[gameState.currentBoxIndex].games[gameState.currentGameIndex];
+        const timeBonus = Math.floor(gameState.timeLeft / game.timeLimit * 50);
+        const points = game.points + timeBonus;
+        gameState.gameScore += points;
+        gameState.totalScore += points;
+        gameState.stats.gamesWon++;
+        gameState.stats.totalTime += (game.timeLimit - gameState.timeLeft);
+
+        createConfetti();
+        showFeedback(`✓ Excellent ! +${points} pts`, 'success');
+
+        setTimeout(() => {
+            gameState.currentGameIndex++;
+            loadBoxGame();
+        }, 2500);
+    } else {
+        playSound('error');
+        gameState.attempts--;
+        document.getElementById('current-game').classList.add('shake');
+        setTimeout(() => document.getElementById('current-game').classList.remove('shake'), 500);
+
+        if (gameState.attempts > 0) {
+            showFeedback(`✗ Incorrect ! ${gameState.attempts} essai(s) restant(s)`, 'error');
+            updateGameDisplay();
+            gameState.currentAnswer = null;
+            startTimer();
+        } else {
+            gameState.stats.gamesLost++;
+            showFeedback('✗ Échec ! Jeu suivant...', 'error');
+            setTimeout(() => {
+                gameState.currentGameIndex++;
+                loadBoxGame();
+            }, 3000);
+        }
+    }
+}
+
+function showFeedback(message, type) {
+    const feedback = document.createElement('div');
+    feedback.className = `fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 px-10 py-8 rounded-3xl text-white text-2xl md:text-3xl font-bold shadow-2xl z-50 bounce-in ${type === 'success' ? 'bg-gradient-to-r from-green-500 to-emerald-600' : 'bg-gradient-to-r from-red-500 to-pink-600'}`;
+    feedback.textContent = message;
+    document.body.appendChild(feedback);
+    setTimeout(() => feedback.remove(), 2500);
+}
+
+function unlockBox() {
+    stopTimer();
+    const boxIndex = gameState.currentBoxIndex;
+    playSound('unlock', boxSoundFrequencies[boxIndex]);
+    createConfetti();
+
+    const box = boxesData[boxIndex];
+    showFeedback(`🔓 ${box.title} déverrouillé !`, 'success');
+
+    gameState.boxesUnlocked++;
+    broadcastUpdate();
+
+    setTimeout(() => {
+        if (gameState.boxesUnlocked >= boxesData.length) {
+            endGame();
+        } else {
+            showScreen('boxes-screen');
+            renderBoxes();
+        }
+    }, 3000);
+}
+
+// ==================== TIMER ====================
+
+function startTimer() {
+    stopTimer();
+
+    gameState.timerInterval = setInterval(() => {
+        gameState.timeLeft--;
+        updateGameDisplay();
+
+        if (gameState.timeLeft <= 10) {
+            playSound('tick');
+            document.getElementById('timer-display').classList.add('timer-critical');
+        }
+
+        if (gameState.timeLeft <= 0) {
+            stopTimer();
+            gameState.attempts--;
+
+            if (gameState.attempts > 0) {
+                playSound('error');
+                showFeedback(`⏰ Temps écoulé ! ${gameState.attempts} essai(s)`, 'error');
+                const game = boxesData[gameState.currentBoxIndex].games[gameState.currentGameIndex];
+                gameState.timeLeft = game.timeLimit;
+                gameState.currentAnswer = null;
+                updateGameDisplay();
+                startTimer();
+            } else {
+                playSound('error');
+                gameState.stats.gamesLost++;
+                showFeedback('⏰ Temps écoulé ! Jeu suivant...', 'error');
+                setTimeout(() => {
+                    gameState.currentGameIndex++;
+                    loadBoxGame();
+                }, 3000);
+            }
+        }
+    }, 1000);
+}
+
+function stopTimer() {
+    if (gameState.timerInterval) {
+        clearInterval(gameState.timerInterval);
+        gameState.timerInterval = null;
+    }
+    document.getElementById('timer-display').classList.remove('timer-critical');
+}
+
+function updateGameDisplay() {
+    document.getElementById('game-score-display').textContent = gameState.totalScore;
+    document.getElementById('timer-display').textContent = gameState.timeLeft;
+    document.getElementById('attempts-display').textContent = '❤️'.repeat(gameState.attempts) + '🖤'.repeat(gameState.maxAttempts - gameState.attempts);
+}
+
+// ==================== FIN DE JEU ====================
+
+function endGame() {
+    stopTimer();
+    playSound('complete');
+    createConfetti();
+
+    gameState.stats.endTime = Date.now();
+    broadcastUpdate();
+
+    showScreen('end-screen');
+    document.getElementById('final-score').textContent = gameState.totalScore;
+
+    const avgTime = gameState.stats.gamesWon > 0 ? Math.round(gameState.stats.totalTime / gameState.stats.gamesWon) : 0;
+
+    document.getElementById('final-stats').innerHTML = `
+        <div class="glass-morphism p-6 rounded-2xl border-2 border-green-400">
+            <div class="text-5xl font-bold text-green-600 dark:text-green-400 mb-2">${gameState.stats.gamesWon}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400 font-semibold">Jeux réussis</div>
+        </div>
+        <div class="glass-morphism p-6 rounded-2xl border-2 border-red-400">
+            <div class="text-5xl font-bold text-red-600 dark:text-red-400 mb-2">${gameState.stats.gamesLost}</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400 font-semibold">Jeux ratés</div>
+        </div>
+        <div class="glass-morphism p-6 rounded-2xl border-2 border-blue-400">
+            <div class="text-5xl font-bold text-blue-600 dark:text-blue-400 mb-2">${avgTime}s</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400 font-semibold">Temps moyen</div>
+        </div>
+    `;
+}
+
+// ==================== UTILITAIRES ====================
+
+function showCustomAlert(message) {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+    modal.innerHTML = `
+        <div class="glass-morphism p-8 rounded-2xl shadow-2xl max-w-md w-full mx-4 bounce-in border-2 border-primary">
+            <p class="text-gray-700 dark:text-gray-300 mb-6 text-center text-xl font-semibold">${message}</p>
+            <button class="w-full px-6 py-4 bg-gradient-to-r from-primary to-purple-600 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-2xl transition-all" onclick="this.closest('.fixed').remove()">OK</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    playSound('tick');
+}
+
+function showConfirmDialog(message, onConfirm) {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+    modal.innerHTML = `
+        <div class="glass-morphism p-8 rounded-2xl shadow-2xl max-w-md w-full mx-4 bounce-in border-2 border-orange-500">
+            <p class="text-gray-700 dark:text-gray-300 mb-6 text-center text-xl font-semibold">${message}</p>
+            <div class="flex gap-3">
+                <button class="flex-1 px-6 py-4 bg-gray-500 hover:bg-gray-600 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-2xl transition-all" onclick="this.closest('.fixed').remove()">Annuler</button>
+                <button id="confirm-btn" class="flex-1 px-6 py-4 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-2xl transition-all">Confirmer</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    playSound('tick');
+
+    // Ajouter l'événement de confirmation
+    modal.querySelector('#confirm-btn').addEventListener('click', () => {
+        modal.remove();
+        onConfirm();
+    });
+}
+</script></body></html>
