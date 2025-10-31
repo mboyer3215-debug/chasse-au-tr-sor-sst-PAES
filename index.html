@@ -1067,12 +1067,28 @@ window.addEventListener('DOMContentLoaded', () => {
         currentTeamName = teamName;
         appMode = 'player';
 
+        // DEBUG: Vérifier gameState AVANT reset
+        console.log('🔍 AVANT resetGameState():', {
+            totalScore: gameState.totalScore,
+            boxesUnlocked: gameState.boxesUnlocked
+        });
+
         // Réinitialiser complètement le gameState pour une nouvelle partie
         resetGameState();
         gameState.stats.startTime = Date.now();
 
+        // PROTECTION CRITIQUE: Forcer les valeurs à 0 si NaN
+        if (isNaN(gameState.totalScore)) {
+            console.error('❌ CORRUPTION DÉTECTÉE: totalScore est NaN après resetGameState()!');
+            gameState.totalScore = 0;
+        }
+        if (isNaN(gameState.boxesUnlocked)) {
+            console.error('❌ CORRUPTION DÉTECTÉE: boxesUnlocked est NaN après resetGameState()!');
+            gameState.boxesUnlocked = 0;
+        }
+
         // DEBUG: Afficher l'état après reset
-        console.log('✅ Après resetGameState() dans player-btn:', {
+        console.log('✅ APRÈS resetGameState() dans player-btn:', {
             totalScore: gameState.totalScore,
             boxesUnlocked: gameState.boxesUnlocked,
             sessionId: sessionId,
@@ -1085,6 +1101,13 @@ window.addEventListener('DOMContentLoaded', () => {
         showScreen('boxes-screen');
         document.getElementById('team-name-display').textContent = currentTeamName;
         renderBoxes();
+
+        // DEBUG: Vérifier gameState JUSTE AVANT broadcastUpdate
+        console.log('🚀 JUSTE AVANT broadcastUpdate():', {
+            totalScore: gameState.totalScore,
+            boxesUnlocked: gameState.boxesUnlocked
+        });
+
         broadcastUpdate();
     });
 
