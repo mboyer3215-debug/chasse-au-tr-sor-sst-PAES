@@ -2042,13 +2042,34 @@ function validateAnswer(isCorrect) {
 
     if (isCorrect) {
         playSound('success');
-        const game = boxesData[gameState.currentBoxIndex].games[gameState.currentGameIndex];
-        const timeBonus = Math.floor(gameState.timeLeft / game.timeLimit * 50);
-        const points = game.points + timeBonus;
+
+        // IMPORTANT: Récupérer le jeu actuel en tenant compte des variations
+        const box = boxesData[gameState.currentBoxIndex];
+        const gameVariations = box.games[gameState.currentGameIndex];
+        const game = Array.isArray(gameVariations) ?
+            gameVariations[Math.floor(Math.random() * gameVariations.length)] :
+            gameVariations;
+
+        // PROTECTION: S'assurer que game.timeLimit et game.points existent
+        const timeLimit = game.timeLimit || 60;
+        const basePoints = game.points || 100;
+
+        const timeBonus = Math.floor(gameState.timeLeft / timeLimit * 50);
+        const points = basePoints + timeBonus;
+
+        console.log('🔍 CALCUL DES POINTS:', {
+            gameType: game.type,
+            basePoints: basePoints,
+            timeLeft: gameState.timeLeft,
+            timeLimit: timeLimit,
+            timeBonus: timeBonus,
+            points: points
+        });
+
         gameState.gameScore += points;
         gameState.totalScore += points;
         gameState.stats.gamesWon++;
-        gameState.stats.totalTime += (game.timeLimit - gameState.timeLeft);
+        gameState.stats.totalTime += (timeLimit - gameState.timeLeft);
 
         // DEBUG: Afficher le score après ajout
         console.log('✅ Points ajoutés:', {
